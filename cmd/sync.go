@@ -1,8 +1,18 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	mongospecgpt "github.com/prestonvasquez/mongo-spec-gpt"
+	"github.com/spf13/cobra"
+)
 
 func runSync(cmd *cobra.Command, args []string) error {
+	err := mongospecgpt.Sync(cmd.Context())
+	if err != nil {
+		return fmt.Errorf("failed to sync: %w", err)
+	}
+
 	return nil
 }
 

@@ -1,8 +1,18 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	mongospecgpt "github.com/prestonvasquez/mongo-spec-gpt"
+	"github.com/spf13/cobra"
+)
 
 func runAsk(cmd *cobra.Command, args []string) error {
+	_, err := mongospecgpt.Ask(cmd.Context(), args[0])
+	if err != nil {
+		return fmt.Errorf("failed to ask: %w", err)
+	}
+
 	return nil
 }
 
