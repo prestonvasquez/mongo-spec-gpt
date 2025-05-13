@@ -56,7 +56,7 @@ func runAsk(cmd *cobra.Command, args []string, opts askOptions) error {
 
 	logrus.Info("creating vector store")
 
-	store, err := mongoutil.Store(cmd.Context(), client)
+	store, err := mongoutil.Store(cmd.Context(), client, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create vector store: %w", err)
 	}
