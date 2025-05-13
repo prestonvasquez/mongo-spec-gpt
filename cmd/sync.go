@@ -23,7 +23,7 @@ func newSyncCommand() *cobra.Command {
 	}
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := runAsk(cmd, args); err != nil {
+		if err := runSync(cmd, args); err != nil {
 			cmd.PrintErrln(err)
 		}
 	}
