@@ -58,7 +58,6 @@ func runAsk(cmd *cobra.Command, args []string, opts askOptions) error {
 	logrus.Info("creating vector store")
 
 	llm, err := openai.New(
-		openai.WithBaseURL("https://skunkworks-gai-349.openai.azure.com/"),
 		openai.WithModel("o4-mini"),
 		openai.WithEmbeddingModel(mongoutil.DefaultOpenAIEmbeddingModel),
 		openai.WithAPIType(openai.APITypeAzure),

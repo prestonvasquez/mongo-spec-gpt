@@ -108,7 +108,6 @@ func insertFiles(ctx context.Context, docs []schema.Document) error {
 	coll := client.Database(mongoutil.DefaultDatabaseName).Collection(mongoutil.DefaultNamespace)
 
 	llm, err := openai.New(
-		openai.WithBaseURL("https://skunkworks-gai-349.openai.azure.com/"),
 		openai.WithModel(mongoutil.DefaultOpenAIEmbeddingModel),
 		openai.WithEmbeddingModel(mongoutil.DefaultOpenAIEmbeddingModel),
 		openai.WithAPIType(openai.APITypeAzure),
