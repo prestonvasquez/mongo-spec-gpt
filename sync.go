@@ -15,6 +15,7 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/textsplitter"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -127,7 +128,7 @@ func insertFiles(ctx context.Context, docs []schema.Document) error {
 		return fmt.Errorf("\nFailed to create a store: %w", err)
 	}
 
-	coll.DeleteMany(ctx, nil)
+	coll.DeleteMany(ctx, bson.D{})
 
 	_, err = store.AddDocuments(ctx, docs)
 
