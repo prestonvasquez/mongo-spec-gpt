@@ -8,27 +8,23 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/tmc/langchaingo/schema"
+	"github.com/tmc/langchaingo/textsplitter"
 )
 
-func Sync(ctx context.Context) error {
-	owner := "mongodb"
-	repo := "specifications"
-
-	mdFiles, err := getMarkdownFiles(owner, repo, "")
-	if err != nil {
-		fmt.Printf("Failed to fetch .md files: %v\n", err)
-		return err
-	}
-
-	fmt.Printf("Found %d .md files\n", len(mdFiles))
-	for path, _ := range mdFiles {
-		fmt.Printf("Path: %s", path)
-	}
-	return nil
-}
-
 const (
-	gitHubAPIBase = "https://api.github.com/repos"
+	gitHubAPIBase        = "https://api.github.com/repos"
+	repoOwner            = "mongodb"
+	repoName             = "specifications"
+	openAIEmbeddingModel = "text-embedding-3-small"
+	openAIEmbeddingDim   = 1536
+	similarityAlgorithm  = "dotProduct"
+	indexName            = "search_index"
+	databaseName         = "spec_gpt"
+	collectionName       = "specs"
+	chunkSize            = 8000
+	chunkOverlap         = 100
 )
 
 type GitHubFile struct {
@@ -38,15 +34,89 @@ type GitHubFile struct {
 	DownloadURL string `json:"download_url"`
 }
 
-// getMarkdownFiles recursively fetches all .md files from a GitHub repository.
-func getMarkdownFiles(owner, repo, dir string) (map[string]string, error) {
+// Defines the document structure
+type Document struct {
+	PageContent string            `bson:"text"`
+	Embedding   []float32         `bson:"embedding"`
+	Metadata    map[string]string `bson:"metadata"`
+}
+
+func Sync(ctx context.Context) error {
+
+	files, err := getFiles(repoOwner, repoName, "")
+	if err != nil {
+		fmt.Printf("Failed to fetch .md files: %v\n", err)
+		return err
+	}
+
+	chunks, err := chunkFiles(files)
+	if err != nil {
+		fmt.Printf("Failed to chunk files: %v\n", err)
+		return err
+	}
+	print(chunks)
+
+	return nil
+}
+
+// Chunk files for document insertion
+func chunkFiles(files map[string]string) ([]schema.Document, error) {
+	values := make([]string, 0, len(files))
+	metadata := make([]map[string]any, 0, len(files))
+
+	for k, v := range files {
+		values = append(values, v)
+		current_metadata := make(map[string]any)
+		current_metadata["source"] = strings.Split(k, "/")[len(strings.Split(k, "/"))-1]
+		metadata = append(metadata, current_metadata)
+	}
+
+	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithModelName(openAIEmbeddingModel), textsplitter.WithChunkSize(chunkSize), textsplitter.WithChunkOverlap(chunkOverlap), textsplitter.WithHeadingHierarchy(true))
+	docs, err := textsplitter.CreateDocuments(splitter, values, metadata)
+	if err != nil {
+		fmt.Printf("Failed to chunk files: %v\n", err)
+		return nil, err
+	}
+
+	return docs, nil
+}
+
+// // Embed and insert chunks as documents
+// func insertFiles(files map[string][]string) error {
+// 	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("SKUNKWORKS_ATLAS_URI")))
+
+// 	defer func() {
+// 		if err := client.Disconnect(context.Background()); err != nil {
+// 			log.Fatalf("Error disconnecting the client: %v", err)
+// 		}
+// 	}()
+
+// 	coll := client.Database(databaseName).Collection(collectionName)
+
+// 	llm, err := openai.New(openai.WithEmbeddingModel(openAIEmbeddingModel))
+// 	if err != nil {
+// 		log.Fatalf("Failed to create an embedder client: %v", err)
+// 	}
+
+// 	embedder, err := embeddings.NewEmbedder(llm)
+// 	if err != nil {
+// 		log.Fatalf("Failed to create an embedder: %v", err)
+// 	}
+
+// 	store := mongovector.New(coll, embedder, mongovector.WithIndex(indexName), mongovector.WithPath("embeddings"))
+
+// 	coll.DeleteMany(context.Background(), nil)
+
+// }
+
+// Recursively fetch all .md files from a GitHub repository.
+func getFiles(owner, repo, dir string) (map[string]string, error) {
 	url := fmt.Sprintf("%s/%s/%s/contents/%s", gitHubAPIBase, owner, repo, dir)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add Authorization token
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", os.Getenv("GITHUB_PAT")))
 
 	client := &http.Client{}
@@ -72,7 +142,8 @@ func getMarkdownFiles(owner, repo, dir string) (map[string]string, error) {
 
 	mdFiles := make(map[string]string)
 	for _, file := range files {
-		if file.Type == "file" && strings.HasSuffix(file.Name, ".md") && !strings.Contains(file.Path, "Test") {
+		// Only fetch .md files that are within the source/ subdirectory
+		if file.Type == "file" && strings.HasSuffix(file.Name, ".md") && strings.Contains(file.Path, "source/") && !strings.Contains(file.Path, "test") {
 			content, err := fetchFileContent(file.DownloadURL)
 			if err != nil {
 				return nil, err
@@ -80,7 +151,7 @@ func getMarkdownFiles(owner, repo, dir string) (map[string]string, error) {
 			mdFiles[file.Path] = content
 		} else if file.Type == "dir" {
 			// Recurse for directories
-			subDirFiles, err := getMarkdownFiles(owner, repo, file.Path)
+			subDirFiles, err := getFiles(owner, repo, file.Path)
 			if err != nil {
 				return nil, err
 			}
@@ -93,7 +164,7 @@ func getMarkdownFiles(owner, repo, dir string) (map[string]string, error) {
 	return mdFiles, nil
 }
 
-// fetchFileContent fetches the content of a file from its download URL.
+// Fetch the contents of a file from its URL.
 func fetchFileContent(downloadURL string) (string, error) {
 	resp, err := http.Get(downloadURL)
 	if err != nil {
