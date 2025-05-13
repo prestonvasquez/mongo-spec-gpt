@@ -6,5 +6,6 @@ Required environment variables:
 
 - `MONGODB_URI`: Atlas cluster 
 - `OPEN_AI_API_KEY`: OpenAI API key
+- `OPEN_AIK_URI`: URI to openAI API endpoint 
 
 ```
