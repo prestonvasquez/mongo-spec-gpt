@@ -88,7 +88,7 @@ func chunkFiles(files map[string]string) ([]schema.Document, error) {
 
 // Embed and insert chunks as documents
 func insertFiles(ctx context.Context, docs []schema.Document) error {
-	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("SKUNKWORKS_ATLAS_URI")))
+	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("MONGODB_URI")))
 
 	defer func() {
 		if err := client.Disconnect(ctx); err != nil {
