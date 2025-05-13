@@ -34,7 +34,7 @@ func runAsk(cmd *cobra.Command, args []string, opts askOptions) error {
 		return fmt.Errorf("MONGODB_URI environment variable is not set")
 	}
 
-	logrus.Infof("connecting to MongoDB at %s", uri)
+	logrus.Infof("connecting to MongoDB...")
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	if err != nil {
