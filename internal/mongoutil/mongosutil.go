@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/vectorstores/mongovector"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -19,9 +20,11 @@ const (
 	// We are oging to use o4-mini for prototyping, which uses the
 	// "text-embedding-3-small" embedding model which has dimensions of 1536. We
 	// will use the dot product algorithm for simlarity search.
-	DefaultIndexName       = "vector_index_dotProduct_1536"
-	DefaultIndexDimensions = 1536
-	DefaultEmbeddingPath   = "spec_embedding"
+	DefaultIndexName            = "vector_index_dotProduct_1536"
+	DefaultIndexDimensions      = 1536
+	DefaultEmbeddingPath        = "spec_embedding"
+	DefaultOpenAIEmbeddingModel = "text-embedding-3-small"
+	DefaultSimilarityAlgorithm  = "dotProduct"
 )
 
 func searchIndexExists(ctx context.Context, coll *mongo.Collection, idx string) (bool, error) {
@@ -75,7 +78,7 @@ func createSearchIndex(ctx context.Context, client mongo.Client) error {
 		Type:          "vector",
 		Path:          DefaultEmbeddingPath,
 		NumDimensions: DefaultIndexDimensions,
-		Similarity:    "dotProduct",
+		Similarity:    DefaultSimilarityAlgorithm,
 	}) // Append in case we want to add filters later.
 
 	def := struct {
@@ -118,13 +121,13 @@ func createSearchIndex(ctx context.Context, client mongo.Client) error {
 	return nil
 }
 
-func Store(ctx context.Context, client *mongo.Client) (*mongovector.Store, error) {
+func Store(ctx context.Context, client *mongo.Client, embedder embeddings.Embedder) (*mongovector.Store, error) {
 	if err := createSearchIndex(ctx, *client); err != nil {
 		return nil, fmt.Errorf("failed to create search index: %w", err)
 	}
 
 	coll := client.Database(DefaultDatabaseName).Collection(DefaultNamespace)
-	store := mongovector.New(coll, nil,
+	store := mongovector.New(coll, embedder,
 		mongovector.WithIndex(DefaultIndexName),
 		mongovector.WithPath(DefaultEmbeddingPath),
 	)
