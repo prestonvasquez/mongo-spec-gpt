@@ -25,6 +25,7 @@ const (
 	DefaultEmbeddingPath        = "spec_embedding"
 	DefaultOpenAIEmbeddingModel = "text-embedding-3-small"
 	DefaultSimilarityAlgorithm  = "dotProduct"
+	DefaultAPIVersion           = "2024-12-01-preview"
 )
 
 func searchIndexExists(ctx context.Context, coll *mongo.Collection, idx string) (bool, error) {

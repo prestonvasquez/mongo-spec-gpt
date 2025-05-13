@@ -8,6 +8,7 @@ import (
 	"github.com/prestonvasquez/mongo-spec-gpt/internal/mongoutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -56,24 +57,36 @@ func runAsk(cmd *cobra.Command, args []string, opts askOptions) error {
 
 	logrus.Info("creating vector store")
 
-	store, err := mongoutil.Store(cmd.Context(), client, nil)
+	llm, err := openai.New(
+		openai.WithModel("o4-mini"),
+		openai.WithEmbeddingModel(mongoutil.DefaultOpenAIEmbeddingModel),
+		openai.WithAPIType(openai.APITypeAzure),
+		openai.WithAPIVersion("2025-04-01-preview"),
+	)
+
+	if err != nil {
+		return fmt.Errorf("\nFailed to create an embedder client: %w", err)
+	}
+
+	embedder, err := embeddings.NewEmbedder(llm)
+	if err != nil {
+		return fmt.Errorf("\nFailed to create an embedder: %w", err)
+	}
+
+	store, err := mongoutil.Store(cmd.Context(), client, embedder)
 	if err != nil {
 		return fmt.Errorf("failed to create vector store: %w", err)
 	}
 
 	logrus.Info("vector store created")
 
-	// Get the LLM from the provider.
-	llm, err := getLLM(opts.llmProvider)
-	if err != nil {
-		return fmt.Errorf("failed to get LLM: %w", err)
-	}
-
 	logrus.Infof("using LLM provider: %s", opts.llmProvider)
-	_, err = mongospecgpt.Ask(cmd.Context(), store, llm, args[0])
+	resp, err := mongospecgpt.Ask(cmd.Context(), store, llm, args[0])
 	if err != nil {
 		return fmt.Errorf("failed to ask: %w", err)
 	}
+
+	logrus.Infof("response: %s", resp)
 
 	logrus.Info("ask completed")
 

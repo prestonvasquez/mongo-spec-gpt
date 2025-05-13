@@ -58,35 +58,35 @@ func Ask(
 
 	prompt := askOpts.PromptFunc(question, results)
 
-	resp, err := llm.GenerateContent(ctx, prompt)
+	resp, err := llms.GenerateFromSinglePrompt(ctx, llm, prompt, llms.WithTemperature(1))
 	if err != nil {
 		return "", fmt.Errorf("failed to call LLM: %w", err)
 	}
 
-	return strings.TrimSpace(resp.Choices[0].Content), nil
+	return resp, nil
 }
 
 // PromptFunc is a function that takes a question and a list of chunks
 // and returns a formatted string to be used as a prompt for an LLM.
-type PromptFunc func(question string, chunks []schema.Document) []llms.MessageContent
+type PromptFunc func(question string, chunks []schema.Document) string
 
 var _ PromptFunc = DefaultPrompt
 
 // DefaultPrompt is the default prompt function that formats the question to
 // provide context to the LLM.
-func DefaultPrompt(question string, chunks []schema.Document) []llms.MessageContent {
+func DefaultPrompt(question string, chunks []schema.Document) string {
 	var b strings.Builder
-
+	b.WriteString("You are an expert on MongoDB specifications.\n\n")
+	b.WriteString("Use the following context to answer the question accurately. If you're unsure, say 'I don't know.'\n\n")
 	b.WriteString("Context:\n")
-	for _, doc := range chunks {
-		b.WriteString(doc.PageContent)
-		b.WriteString("\n---\n")
+
+	for i, doc := range chunks {
+		source := doc.Metadata["source"]
+		heading := doc.Metadata["heading"]
+		b.WriteString(fmt.Sprintf("[Chunk %d: %s / %s]\n", i+1, source, heading))
+		b.WriteString(doc.PageContent + "\n---\n")
 	}
 
 	b.WriteString(fmt.Sprintf("\nQuestion: %s\n", question))
-
-	return []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, "You are an expert on MongoDB specifications."),
-		llms.TextParts(llms.ChatMessageTypeHuman, b.String()),
-	}
+	return b.String()
 }
