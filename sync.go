@@ -23,7 +23,7 @@ const (
 	indexName            = "search_index"
 	databaseName         = "spec_gpt"
 	collectionName       = "specs"
-	chunkSize            = 8000
+	chunkSize            = 800
 	chunkOverlap         = 100
 )
 
