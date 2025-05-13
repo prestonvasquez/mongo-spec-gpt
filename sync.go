@@ -9,27 +9,22 @@ import (
 	"os"
 	"strings"
 
+	"github.com/prestonvasquez/mongo-spec-gpt/internal/mongoutil"
+	"github.com/sirupsen/logrus"
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/textsplitter"
-	"github.com/tmc/langchaingo/vectorstores/mongovector"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 const (
-	gitHubAPIBase        = "https://api.github.com/repos"
-	repoOwner            = "mongodb"
-	repoName             = "specifications"
-	openAIEmbeddingModel = "text-embedding-3-small"
-	openAIEmbeddingDim   = 1536
-	similarityAlgorithm  = "dotProduct"
-	indexName            = "search_index"
-	databaseName         = "spec_gpt"
-	collectionName       = "specs"
-	chunkSize            = 800
-	chunkOverlap         = 100
+	gitHubAPIBase = "https://api.github.com/repos"
+	repoOwner     = "mongodb"
+	repoName      = "specifications"
+	chunkSize     = 800
+	chunkOverlap  = 100
 )
 
 type GitHubFile struct {
@@ -47,6 +42,7 @@ type Document struct {
 }
 
 func Sync(ctx context.Context) error {
+	logrus.Info("Syncing .md files from GitHub repository...")
 
 	files, err := getFiles(repoOwner, repoName, "")
 	if err != nil {
@@ -57,17 +53,20 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("\nFailed to chunk files: %w", err)
 	}
-	err = insertFiles(chunks)
+	err = insertFiles(ctx, chunks)
 
 	if err != nil {
 		return fmt.Errorf("\nFailed to insert files: %w", err)
 	}
+
+	logrus.Info("Successfully synced .md files to MongoDB.")
 
 	return nil
 }
 
 // Chunk files for document insertion
 func chunkFiles(files map[string]string) ([]schema.Document, error) {
+	logrus.Infof("Chunking %d files...", len(files))
 	values := make([]string, 0, len(files))
 	metadata := make([]map[string]any, 0, len(files))
 
@@ -76,30 +75,44 @@ func chunkFiles(files map[string]string) ([]schema.Document, error) {
 		current_metadata := make(map[string]any)
 		current_metadata["source"] = strings.Split(k, "/")[len(strings.Split(k, "/"))-1]
 		metadata = append(metadata, current_metadata)
+		logrus.Infof("Chunking file: %s", k)
 	}
 
-	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithModelName(openAIEmbeddingModel), textsplitter.WithChunkSize(chunkSize), textsplitter.WithChunkOverlap(chunkOverlap), textsplitter.WithHeadingHierarchy(true))
+	splitter := textsplitter.NewMarkdownTextSplitter(
+		textsplitter.WithModelName(mongoutil.DefaultOpenAIEmbeddingModel),
+		textsplitter.WithChunkSize(chunkSize),
+		textsplitter.WithChunkOverlap(chunkOverlap),
+		textsplitter.WithHeadingHierarchy(true))
+
 	docs, err := textsplitter.CreateDocuments(splitter, values, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("\nFailed to chunk files: %w", err)
 	}
 
+	logrus.Infof("Chunked %d files into %d documents.", len(files), len(docs))
+
 	return docs, nil
 }
 
 // Embed and insert chunks as documents
-func insertFiles(docs []schema.Document) error {
-	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("SKUNKWORKS_ATLAS_URI")))
+func insertFiles(ctx context.Context, docs []schema.Document) error {
+	logrus.Info("Inserting documents into MongoDB...")
+	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("MONGODB_URI")))
 
 	defer func() {
-		if err := client.Disconnect(context.Background()); err != nil {
+		if err := client.Disconnect(ctx); err != nil {
 			fmt.Errorf("\nFailed disconnecting the client: %w", err)
 		}
 	}()
 
-	coll := client.Database(databaseName).Collection(collectionName)
+	coll := client.Database(mongoutil.DefaultDatabaseName).Collection(mongoutil.DefaultNamespace)
 
-	llm, err := openai.New(openai.WithBaseURL("https://skunkworks-gai-349.openai.azure.com/"), openai.WithModel(openAIEmbeddingModel), openai.WithEmbeddingModel(openAIEmbeddingModel), openai.WithAPIType(openai.APITypeAzure), openai.WithToken(os.Getenv("SKUNKWORKS_OPENAI_KEY")))
+	llm, err := openai.New(
+		openai.WithBaseURL("https://skunkworks-gai-349.openai.azure.com/"),
+		openai.WithModel(mongoutil.DefaultOpenAIEmbeddingModel),
+		openai.WithEmbeddingModel(mongoutil.DefaultOpenAIEmbeddingModel),
+		openai.WithAPIType(openai.APITypeAzure))
+
 	if err != nil {
 		return fmt.Errorf("\nFailed to create an embedder client: %w", err)
 	}
@@ -109,14 +122,20 @@ func insertFiles(docs []schema.Document) error {
 		return fmt.Errorf("\nFailed to create an embedder: %w", err)
 	}
 
-	store := mongovector.New(coll, embedder, mongovector.WithIndex(indexName), mongovector.WithPath("embeddings"))
-	coll.DeleteMany(context.Background(), nil)
+	store, err := mongoutil.Store(ctx, client, embedder)
+	if err != nil {
+		return fmt.Errorf("\nFailed to create a store: %w", err)
+	}
 
-	_, err = store.AddDocuments(context.Background(), docs)
+	coll.DeleteMany(ctx, nil)
+
+	_, err = store.AddDocuments(ctx, docs)
 
 	if err != nil {
 		return fmt.Errorf("\nFailed adding documents: %w", err)
 	}
+
+	logrus.Infof("Inserted %d documents into MongoDB.", len(docs))
 
 	return nil
 }
@@ -161,6 +180,7 @@ func getFiles(owner, repo, dir string) (map[string]string, error) {
 				return nil, err
 			}
 			mdFiles[file.Path] = content
+			logrus.Infof("Fetched file: %s", file.Path)
 		} else if file.Type == "dir" {
 			// Recurse for directories
 			subDirFiles, err := getFiles(owner, repo, file.Path)
