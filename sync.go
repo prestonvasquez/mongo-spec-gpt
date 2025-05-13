@@ -9,8 +9,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/tmc/langchaingo/embeddings"
+	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/textsplitter"
+	"github.com/tmc/langchaingo/vectorstores/mongovector"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 const (
@@ -45,16 +50,18 @@ func Sync(ctx context.Context) error {
 
 	files, err := getFiles(repoOwner, repoName, "")
 	if err != nil {
-		fmt.Printf("Failed to fetch .md files: %v\n", err)
-		return err
+		return fmt.Errorf("\nFailed to fetch .md files: %w", err)
 	}
 
 	chunks, err := chunkFiles(files)
 	if err != nil {
-		fmt.Printf("Failed to chunk files: %v\n", err)
-		return err
+		return fmt.Errorf("\nFailed to chunk files: %w", err)
 	}
-	print(chunks)
+	err = insertFiles(chunks)
+
+	if err != nil {
+		return fmt.Errorf("\nFailed to insert files: %w", err)
+	}
 
 	return nil
 }
@@ -74,40 +81,45 @@ func chunkFiles(files map[string]string) ([]schema.Document, error) {
 	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithModelName(openAIEmbeddingModel), textsplitter.WithChunkSize(chunkSize), textsplitter.WithChunkOverlap(chunkOverlap), textsplitter.WithHeadingHierarchy(true))
 	docs, err := textsplitter.CreateDocuments(splitter, values, metadata)
 	if err != nil {
-		fmt.Printf("Failed to chunk files: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("\nFailed to chunk files: %w", err)
 	}
 
 	return docs, nil
 }
 
-// // Embed and insert chunks as documents
-// func insertFiles(files map[string][]string) error {
-// 	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("SKUNKWORKS_ATLAS_URI")))
+// Embed and insert chunks as documents
+func insertFiles(docs []schema.Document) error {
+	client, _ := mongo.Connect(options.Client().ApplyURI(os.Getenv("SKUNKWORKS_ATLAS_URI")))
 
-// 	defer func() {
-// 		if err := client.Disconnect(context.Background()); err != nil {
-// 			log.Fatalf("Error disconnecting the client: %v", err)
-// 		}
-// 	}()
+	defer func() {
+		if err := client.Disconnect(context.Background()); err != nil {
+			fmt.Errorf("\nFailed disconnecting the client: %w", err)
+		}
+	}()
 
-// 	coll := client.Database(databaseName).Collection(collectionName)
+	coll := client.Database(databaseName).Collection(collectionName)
 
-// 	llm, err := openai.New(openai.WithEmbeddingModel(openAIEmbeddingModel))
-// 	if err != nil {
-// 		log.Fatalf("Failed to create an embedder client: %v", err)
-// 	}
+	llm, err := openai.New(openai.WithBaseURL("https://skunkworks-gai-349.openai.azure.com/"), openai.WithModel(openAIEmbeddingModel), openai.WithEmbeddingModel(openAIEmbeddingModel), openai.WithAPIType(openai.APITypeAzure), openai.WithToken(os.Getenv("SKUNKWORKS_OPENAI_KEY")))
+	if err != nil {
+		return fmt.Errorf("\nFailed to create an embedder client: %w", err)
+	}
 
-// 	embedder, err := embeddings.NewEmbedder(llm)
-// 	if err != nil {
-// 		log.Fatalf("Failed to create an embedder: %v", err)
-// 	}
+	embedder, err := embeddings.NewEmbedder(llm)
+	if err != nil {
+		return fmt.Errorf("\nFailed to create an embedder: %w", err)
+	}
 
-// 	store := mongovector.New(coll, embedder, mongovector.WithIndex(indexName), mongovector.WithPath("embeddings"))
+	store := mongovector.New(coll, embedder, mongovector.WithIndex(indexName), mongovector.WithPath("embeddings"))
+	coll.DeleteMany(context.Background(), nil)
 
-// 	coll.DeleteMany(context.Background(), nil)
+	_, err = store.AddDocuments(context.Background(), docs)
 
-// }
+	if err != nil {
+		return fmt.Errorf("\nFailed adding documents: %w", err)
+	}
+
+	return nil
+}
 
 // Recursively fetch all .md files from a GitHub repository.
 func getFiles(owner, repo, dir string) (map[string]string, error) {
@@ -127,7 +139,7 @@ func getFiles(owner, repo, dir string) (map[string]string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch contents: %v", resp.Status)
+		return nil, fmt.Errorf("\nFailed to fetch contents: %v", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -173,7 +185,7 @@ func fetchFileContent(downloadURL string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to fetch file content: %v", resp.Status)
+		return "", fmt.Errorf("\nFailed to fetch file content: %v", resp.Status)
 	}
 
 	content, err := io.ReadAll(resp.Body)
