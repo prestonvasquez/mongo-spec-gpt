@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runSync(cmd *cobra.Command, args []string) error {
+func runSync(cmd *cobra.Command, args []string, _ mongospecgpt.SyncOptions) error {
 	err := mongospecgpt.Sync(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("failed to sync: %w", err)
@@ -23,7 +23,7 @@ func newSyncCommand() *cobra.Command {
 	}
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := runSync(cmd, args); err != nil {
+		if err := runSync(cmd, args, mongospecgpt.SyncOptions{}); err != nil {
 			cmd.PrintErrln(err)
 		}
 	}
