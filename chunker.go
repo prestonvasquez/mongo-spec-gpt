@@ -1,7 +1,6 @@
 package mongospecgpt
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -63,9 +62,6 @@ func (s *SentenceChunker) Chunk(texts []string, metadata []map[string]any) ([]sc
 			})
 		}
 	}
-
-	fmt.Println(docs[0].PageContent)
-	fmt.Println(docs[1].PageContent)
 
 	return docs, nil
 }

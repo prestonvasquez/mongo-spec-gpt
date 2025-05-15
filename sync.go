@@ -54,8 +54,8 @@ func WithChunker(chunker Chunker) SyncOption {
 
 func Sync(ctx context.Context, opts ...SyncOption) error {
 	syncOpts := SyncOptions{
-		//Chunker: NewMarkdownChunker(mongoutil.DefaultOpenAIEmbeddingModel, chunkSize, chunkOverlap),
-		Chunker: NewSentenceChunker(chunkSize, chunkOverlap),
+		Chunker: NewMarkdownChunker(mongoutil.DefaultOpenAIEmbeddingModel, chunkSize, chunkOverlap),
+		//Chunker: NewSentenceChunker(chunkSize, chunkOverlap),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -98,7 +98,7 @@ func chunkFiles(chunker Chunker, files map[string]string) ([]schema.Document, er
 	for path, content := range files {
 		values = append(values, content)
 		meta := map[string]any{
-			"source": path[strings.LastIndex(path, "/")+1:],
+			"source": strings.Split(path, "/")[len(strings.Split(path, "/"))-1],
 		}
 		metadata = append(metadata, meta)
 		logrus.Infof("Chunking file: %s", path)
