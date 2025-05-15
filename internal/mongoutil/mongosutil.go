@@ -17,9 +17,9 @@ const (
 	DefaultDatabaseName = "mongospecgpt"
 	DefaultNamespace    = "specs"
 
-	// We are oging to use o4-mini for prototyping, which uses the
+	// We are going to use o4-mini for prototyping, which uses the
 	// "text-embedding-3-small" embedding model which has dimensions of 1536. We
-	// will use the dot product algorithm for simlarity search.
+	// will use the dot product algorithm for similarity search.
 	DefaultIndexName            = "vector_index_dotProduct_1536"
 	DefaultIndexDimensions      = 1536
 	DefaultEmbeddingPath        = "spec_embedding"
@@ -37,14 +37,20 @@ func searchIndexExists(ctx context.Context, coll *mongo.Collection, idx string) 
 		return false, fmt.Errorf("failed to list search indexes: %w", err)
 	}
 
-	if cursor == nil || cursor.Current == nil {
+	if cursor == nil {
 		return false, nil
 	}
 
-	name := cursor.Current.Lookup("name").StringValue()
-	queryable := cursor.Current.Lookup("queryable").Boolean()
+	for cursor.Next(ctx) {
+		name := cursor.Current.Lookup("name").StringValue()
+		queryable := cursor.Current.Lookup("queryable").Boolean()
 
-	return name == idx && queryable, nil
+		if name == idx && queryable {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // vectorField defines the fields of an index used for vector search.
