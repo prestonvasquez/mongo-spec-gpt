@@ -54,7 +54,8 @@ func WithChunker(chunker Chunker) SyncOption {
 
 func Sync(ctx context.Context, opts ...SyncOption) error {
 	syncOpts := SyncOptions{
-		Chunker: NewMarkdownChunker(mongoutil.DefaultOpenAIEmbeddingModel, chunkSize, chunkOverlap),
+		//Chunker: NewMarkdownChunker(mongoutil.DefaultOpenAIEmbeddingModel, chunkSize, chunkOverlap),
+		Chunker: NewSentenceChunker(chunkSize, chunkOverlap),
 	}
 	for _, opt := range opts {
 		if opt != nil {
