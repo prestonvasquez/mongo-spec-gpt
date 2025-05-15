@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores"
@@ -50,34 +51,48 @@ func Ask(
 		opt(askOpts)
 	}
 
-	// Perform a similarity search on the vector store.
-	results, err := store.SimilaritySearch(ctx, question, askOpts.NumDocs)
-	if err != nil {
-		return "", fmt.Errorf("failed to perform similarity search: %w", err)
+	queries := strings.Split(question, "|")
+	response := ""
+
+	for _, query := range queries {
+		// Perform a similarity search on the vector store.
+		results, err := store.SimilaritySearch(ctx, query, askOpts.NumDocs)
+		if err != nil {
+			return "", fmt.Errorf("failed to perform similarity search: %w", err)
+		}
+
+		var prompt string
+
+		// Chain previous response as context, if it exists
+		if response != "" {
+			prompt = askOpts.PromptFunc(query, results, response)
+		} else {
+			prompt = askOpts.PromptFunc(query, results)
+		}
+
+		logrus.Infof("Calling with this prompt: %s", prompt)
+
+		response, err = llms.GenerateFromSinglePrompt(ctx, llm, prompt, llms.WithTemperature(1))
+		if err != nil {
+			return "", fmt.Errorf("failed to call LLM: %w", err)
+		}
 	}
 
-	prompt := askOpts.PromptFunc(question, results)
-
-	resp, err := llms.GenerateFromSinglePrompt(ctx, llm, prompt, llms.WithTemperature(1))
-	if err != nil {
-		return "", fmt.Errorf("failed to call LLM: %w", err)
-	}
-
-	return resp, nil
+	return response, nil
 }
 
-// PromptFunc is a function that takes a question and a list of chunks
+// PromptFunc is a function that takes a question, a list of chunks, and an optional previous response
 // and returns a formatted string to be used as a prompt for an LLM.
-type PromptFunc func(question string, chunks []schema.Document) string
+type PromptFunc func(question string, chunks []schema.Document, chainedContext ...string) string
 
 var _ PromptFunc = DefaultPrompt
 
 // DefaultPrompt is the default prompt function that formats the question to
 // provide context to the LLM.
-func DefaultPrompt(question string, chunks []schema.Document) string {
+func DefaultPrompt(question string, chunks []schema.Document, chainedContext ...string) string {
 	var b strings.Builder
 	b.WriteString("You are an expert on MongoDB specifications.\n\n")
-	b.WriteString("Use the following context to answer the question accurately. If you're unsure, say 'I don't know.'\n\n")
+	b.WriteString("Use the following context to answer the question accurately. Keep your answer grounded in this context. If you're unsure, say 'I don't know.'\n\n")
 	b.WriteString("Context:\n")
 
 	for i, doc := range chunks {
@@ -85,6 +100,10 @@ func DefaultPrompt(question string, chunks []schema.Document) string {
 		heading := doc.Metadata["heading"]
 		b.WriteString(fmt.Sprintf("[Chunk %d: %s / %s]\n", i+1, source, heading))
 		b.WriteString(doc.PageContent + "\n---\n")
+	}
+
+	if len(chainedContext) > 0 {
+		b.WriteString(chainedContext[0])
 	}
 
 	b.WriteString(fmt.Sprintf("\nQuestion: %s\n", question))
