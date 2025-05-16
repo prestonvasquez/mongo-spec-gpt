@@ -452,7 +452,6 @@ E --> K
 ```
 ----
 ### Prompt (With Chaining): "How should I implement rtt monitoring in an algorithm? | Generate a mermaid diagram for rtt monitoring. The content of your diagram should not contain any quotation marks or parentheses."
-
 ```mermaid
 flowchart TD
     A[Create RTT monitor for server]
@@ -540,4 +539,128 @@ flowchart TD
   E -->|no| K[Initial topology ready]
   J --> K
   K --> L[End]
+```
+----
+### Prompt (With Chaining): "How should I implement transactions  in an algorithm? | Generate a mermaid diagram for transactions. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TB
+    A[Start] --> B[Start Transaction]
+    B --> C[Run Transaction Logic]
+    C --> D{Error Occurred}
+    D -->|Transient Transaction Error| E[Abort Transaction]
+    E --> B
+    D -->|Other Error| F[Abort Transaction]
+    F --> G[End with Error]
+    D -->|No Error| H[Commit Transaction]
+    H --> I{Commit Error Occurred}
+    I -->|Unknown Transaction Commit Result| H
+    I -->|Other Commit Error| J[End with Error]
+    I -->|No Error| K[Success End]
+```
+----
+### Prompt (With Chaining): "How should I implement the server handshake in an algorithm? | Generate a mermaid diagram for server handshakes. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TD
+  A[Open Socket]
+  B[Send Handshake with Operation Timeout]
+  C{Handshake Error}
+  D[Handle Handshake Failure]
+  E[Parse Server Type]
+  F{Versioned API and Legacy Hello Received}
+  G{Server Type is Arbiter}
+  H[Handshake Success]
+  I[Perform Authentication Conversation]
+  J{Authentication Error}
+  K[Handle Authentication Failure]
+
+  A --> B
+  B --> C
+  C -->|Yes| D
+  C -->|No| E
+  E --> F
+  F -->|Yes| D
+  F -->|No| G
+  G -->|Yes| H
+  G -->|No| I
+  I --> J
+  J -->|Yes| K
+  J -->|No| H
+```
+----
+### Prompt (With Chaining): "How should I implement CSOT in an algorithm? | Generate a mermaid diagram for CSOT. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TD
+  Start[Start operation] --> Init[Record start time and deadline]
+  Init --> Op[Execute operation]
+  Op --> Error{Did operation error}
+  Error -- No --> Success[Return result]
+  Error -- Yes --> Retryable{Is error retryable}
+  Retryable -- No --> Fail[Raise error]
+  Retryable -- Yes --> CSOTmode{Is CSOT enabled}
+  CSOTmode -- Yes --> TimeLeft{Now before deadline}
+  TimeLeft -- Yes --> Op
+  TimeLeft -- No --> Fail
+  CSOTmode -- No --> IsWrite{Is operation a write}
+  IsWrite -- No --> Op
+  IsWrite -- Yes --> RetryCount{Attempts less than two}
+  RetryCount -- Yes --> Op
+  RetryCount -- No --> Fail
+```
+----
+### Prompt (With Chaining): "How should I implement CSOT timeouts in an algorithm? | Generate a mermaid diagram for CSOT timeouts. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TD
+    Start[Start Operation] --> Init[Record start time and user timeouts]
+    Init --> ComputeRemaining[Compute elapsed and remaining total]
+    ComputeRemaining --> CheckTotal{Remaining total greater than zero}
+    CheckTotal -- No --> Timeout[Abort with CSOT timeout error]
+    CheckTotal -- Yes --> PhaseCheck{In connect phase}
+    PhaseCheck -- Yes --> ComputePhaseConnect[phase timeout equals smaller of remaining total and connect timeout]
+    PhaseCheck -- No --> ComputePhaseOther[phase timeout equals remaining total]
+    ComputePhaseConnect --> Attempt[Perform operation attempt with hard deadline now plus phase timeout]
+    ComputePhaseOther --> Attempt
+    Attempt --> ResultCheck{Success or non retryable error}
+    ResultCheck -- Yes --> Return[Return operation result]
+    ResultCheck -- No --> ComputeRemaining
+```
+----
+### Prompt (With Chaining): "How should I implement primary election in an algorithm? | Generate a mermaid diagram for primary election. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TD
+  Start[Initialize state lastElectionId lastSetVersion lastProtocolVersion maxWireVersion]
+  Start --> Discover[Discover new primary]
+  Discover --> Extract[Extract electionId setVersion protocolVersion maxWireVersion]
+  Extract --> CheckProto{lastProtocolVersion set and new protocolVersion not equal lastProtocolVersion}
+  CheckProto -->|Yes| Reset[Accept new primary reset state values] --> End[End]
+  CheckProto -->|No| CheckWire{maxWireVersion less than 17}
+  CheckWire -->|Yes| MakeTuplesPre6[Form newTuple as newSetVersion newElectionId and oldTuple as lastSetVersion lastElectionId]
+  CheckWire -->|No| MakeTuples6[Form newTuple as newElectionId newSetVersion and oldTuple as lastElectionId lastSetVersion]
+  MakeTuplesPre6 --> Compare{newTuple less than oldTuple}
+  MakeTuples6 --> Compare
+  Compare -->|Yes| Stale[Mark member unknown keep old primary] --> End
+  Compare -->|No| Accept[Accept new primary update state values] --> End
+```
+----
+### Prompt (With Chaining): "How should I implement checking out a connection from a pool in an algorithm? | Generate a mermaid diagram for checking out a connection from a pool. The content of your diagram should not contain any quotation marks or parentheses."
+```mermaid
+flowchart TB
+  Start --> SetupTimeoutTimer
+  SetupTimeoutTimer --> CheckPoolState
+  CheckPoolState -->|PoolClosed or PoolPaused| EmitError
+  CheckPoolState -->|PoolActive| EnqueueCheckoutRequest
+  EnqueueCheckoutRequest --> WaitQueueFront
+  WaitQueueFront -->|NotAtFront| WaitQueueFront
+  WaitQueueFront -->|AtFront| CheckAvailableConnections
+  CheckAvailableConnections -->|AvailableCount greater zero| UseAvailableConnection
+  CheckAvailableConnections -->|NoAvailable| CheckConnectionLimits
+  CheckConnectionLimits -->|UnderMaxLimits| InitiateConnectionCreation
+  CheckConnectionLimits -->|AtMaxLimits| AwaitCheckInOrCountChange
+  InitiateConnectionCreation --> ConnectionCreationComplete
+  ConnectionCreationComplete --> UseNewConnection
+  UseAvailableConnection --> PrepareCheckedOutConnection
+  UseNewConnection --> PrepareCheckedOutConnection
+  AwaitCheckInOrCountChange --> WaitQueueFront
+  PrepareCheckedOutConnection --> ReturnConnection
+  EmitError --> End
+  ReturnConnection --> End
 ```
