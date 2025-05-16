@@ -83,7 +83,7 @@ func chunkFiles(files map[string]string) ([]schema.Document, error) {
 		textsplitter.WithModelName(mongoutil.DefaultOpenAIEmbeddingModel),
 		textsplitter.WithChunkSize(chunkSize),
 		textsplitter.WithChunkOverlap(chunkOverlap),
-		textsplitter.WithHeadingHierarchy(true))
+		textsplitter.WithHeadingHierarchy(false))
 
 	docs, err := textsplitter.CreateDocuments(splitter, values, metadata)
 	if err != nil {
