@@ -14,7 +14,6 @@ import (
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/schema"
-	"github.com/tmc/langchaingo/textsplitter"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -42,7 +41,33 @@ type Document struct {
 	Metadata    map[string]string `bson:"metadata"`
 }
 
-func Sync(ctx context.Context) error {
+type SyncOptions struct {
+	Chunker Chunker
+}
+
+type SyncOption func(*SyncOptions)
+
+func WithChunker(chunker Chunker) SyncOption {
+	return func(opts *SyncOptions) {
+		opts.Chunker = chunker
+	}
+}
+
+func Sync(ctx context.Context, opts ...SyncOption) error {
+	syncOpts := SyncOptions{
+		Chunker: NewMarkdownChunker(mongoutil.DefaultOpenAIEmbeddingModel, chunkSize, chunkOverlap),
+		//Chunker: NewSentenceChunker(chunkSize, chunkOverlap),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&syncOpts)
+		}
+	}
+
+	if syncOpts.Chunker == nil {
+		return fmt.Errorf("chunker is not set")
+	}
+
 	logrus.Info("Syncing .md files from GitHub repository...")
 
 	files, err := getFiles(repoOwner, repoName, "")
@@ -50,7 +75,7 @@ func Sync(ctx context.Context) error {
 		return fmt.Errorf("\nFailed to fetch .md files: %w", err)
 	}
 
-	chunks, err := chunkFiles(files)
+	chunks, err := chunkFiles(syncOpts.Chunker, files)
 	if err != nil {
 		return fmt.Errorf("\nFailed to chunk files: %w", err)
 	}
@@ -66,28 +91,23 @@ func Sync(ctx context.Context) error {
 }
 
 // Chunk files for document insertion
-func chunkFiles(files map[string]string) ([]schema.Document, error) {
+func chunkFiles(chunker Chunker, files map[string]string) ([]schema.Document, error) {
 	logrus.Infof("Chunking %d files...", len(files))
 	values := make([]string, 0, len(files))
 	metadata := make([]map[string]any, 0, len(files))
 
-	for k, v := range files {
-		values = append(values, v)
-		current_metadata := make(map[string]any)
-		current_metadata["source"] = strings.Split(k, "/")[len(strings.Split(k, "/"))-1]
-		metadata = append(metadata, current_metadata)
-		logrus.Infof("Chunking file: %s", k)
+	for path, content := range files {
+		values = append(values, content)
+		meta := map[string]any{
+			"source": strings.Split(path, "/")[len(strings.Split(path, "/"))-1],
+		}
+		metadata = append(metadata, meta)
+		logrus.Infof("Chunking file: %s", path)
 	}
 
-	splitter := textsplitter.NewMarkdownTextSplitter(
-		textsplitter.WithModelName(mongoutil.DefaultOpenAIEmbeddingModel),
-		textsplitter.WithChunkSize(chunkSize),
-		textsplitter.WithChunkOverlap(chunkOverlap),
-		textsplitter.WithHeadingHierarchy(false))
-
-	docs, err := textsplitter.CreateDocuments(splitter, values, metadata)
+	docs, err := chunker.Chunk(values, metadata)
 	if err != nil {
-		return nil, fmt.Errorf("\nFailed to chunk files: %w", err)
+		return nil, err
 	}
 
 	logrus.Infof("Chunked %d files into %d documents.", len(files), len(docs))
